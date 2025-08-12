@@ -50,7 +50,7 @@ fn run_repl() {
 
     loop {
         print!("> ");
-        let _ = stdout.flush();
+        stdout.flush().expect("failure writing to stdout");
         if stdin.read_line(&mut input).is_err() {
             break;
         }
