@@ -3,7 +3,6 @@ use std::{fmt, str::Chars};
 use crate::token::{Token, TokenKind};
 
 /// Iterator over tokens in Lox code.
-#[derive(Debug)]
 pub struct Lexer<'a> {
     stream: DoublyPeekable<Chars<'a>>,
     line: u64,
@@ -120,7 +119,7 @@ impl<'a> Iterator for Lexer<'a> {
         }
 
         let token = self.scan_token();
-        if token.is_ok_and(|t| t == TokenKind::Eof) {
+        if token == Ok(TokenKind::Eof) {
             self.finished = true;
         }
 
@@ -157,12 +156,14 @@ impl fmt::Debug for LexError {
 
 /// Iterator capable of peeking 2 items ahead.
 /// Implementation based on the `Peekable` struct from rust's std.
-#[derive(Clone, Debug)]
 struct DoublyPeekable<I: Iterator> {
     iter: I,
     // remembered values
-    peeked: Option<(Option<I::Item>, Option<Option<I::Item>>)>,
+    peeked: Option<(PeekedItem<I>, Option<PeekedItem<I>>)>,
 }
+
+/// Result of the `next()` function from the Iterator trait
+type PeekedItem<I> = Option<<I as Iterator>::Item>;
 
 impl<I: Iterator> Iterator for DoublyPeekable<I> {
     type Item = I::Item;
@@ -186,14 +187,14 @@ impl<I: Iterator> DoublyPeekable<I> {
         DoublyPeekable { iter, peeked: None }
     }
 
-    fn peek<'a>(&'a mut self) -> Option<&'a I::Item> {
+    fn peek(&mut self) -> Option<&I::Item> {
         self.peeked
             .get_or_insert_with(|| (self.iter.next(), None))
             .0
             .as_ref()
     }
 
-    fn peek_second<'a>(&'a mut self) -> Option<&'a I::Item> {
+    fn peek_second(&mut self) -> Option<&I::Item> {
         self.peeked
             .get_or_insert_with(|| (self.iter.next(), None))
             .1
