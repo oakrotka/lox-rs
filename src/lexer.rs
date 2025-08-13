@@ -1,6 +1,6 @@
 use std::{fmt, str::CharIndices};
 
-use crate::token::{Token, TokenKind};
+use crate::token::{self, Token, TokenKind};
 
 /// Iterator over tokens in Lox code.
 pub struct Lexer<'a> {
@@ -160,30 +160,7 @@ impl<'a> Lexer<'a> {
             };
         };
 
-        use TokenKind::{
-            And, Class, Else, False, For, Fun, Identifier, If, Nil, Or, Print, Return, Super, This,
-            True, Var, While,
-        };
-
-        match name {
-            "and" => And,
-            "class" => Class,
-            "else" => Else,
-            "false" => False,
-            "for" => For,
-            "fun" => Fun,
-            "if" => If,
-            "nil" => Nil,
-            "or" => Or,
-            "print" => Print,
-            "return" => Return,
-            "super" => Super,
-            "this" => This,
-            "true" => True,
-            "var" => Var,
-            "while" => While,
-            s => Identifier(s),
-        }
+        *token::KEYWORDS.get(name).unwrap_or(&TokenKind::Identifier(name))
     }
 
     #[inline]
