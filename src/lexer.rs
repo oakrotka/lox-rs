@@ -4,7 +4,7 @@ use crate::token::{Token, TokenKind};
 
 /// Iterator over tokens in Lox code.
 pub struct Lexer<'a> {
-    stream: DoublyPeekable<Chars<'a>>,
+    stream: Chars<'a>,
     line: u64,
     finished: bool,
 }
@@ -14,7 +14,7 @@ type TokenMatchingResult<'a> = Result<TokenKind<'a>, LexError>;
 impl<'a> Lexer<'a> {
     pub fn from(source: &'a str) -> Self {
         Lexer {
-            stream: DoublyPeekable::from(source.chars()),
+            stream: source.chars(),
             line: 1,
             finished: false,
         }
@@ -58,8 +58,11 @@ impl<'a> Lexer<'a> {
                 // a slash can be a comment or a division operator
                 '/' if self.match_next('/') => 'comment: loop {
                     match self.peek_char() {
-                        None => break 'comment Eof,
                         Some('\n') => continue 'token_scanning,
+                        None => {
+                            self.next_char();
+                            break 'comment Eof;
+                        }
                         Some(_) => {
                             self.next_char();
                         }
@@ -90,18 +93,20 @@ impl<'a> Lexer<'a> {
     }
 
     #[inline]
-    fn peek_char(&mut self) -> Option<&char> {
-        self.stream.peek()
+    fn peek_char(&mut self) -> Option<char> {
+        self.stream.clone().next()
     }
 
     #[inline]
-    fn peek_second_char(&mut self) -> Option<&char> {
-        self.stream.peek_second()
+    fn peek_second_char(&mut self) -> Option<char> {
+        let mut iter = self.stream.clone();
+        iter.next();
+        iter.next()
     }
 
     #[inline]
     fn match_next(&mut self, expected: char) -> bool {
-        let matched = self.stream.peek().is_some_and(|c| *c == expected);
+        let matched = self.peek_char() == Some(expected);
         if matched {
             self.next_char();
         }
@@ -139,6 +144,7 @@ pub struct LexError {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum LexErrorKind {
     UnexpectedCharater(char),
+    UnterminatedString,
 }
 
 impl fmt::Debug for LexError {
@@ -148,66 +154,18 @@ impl fmt::Debug for LexError {
                 "Unexpected control character".to_string()
             }
             LexErrorKind::UnexpectedCharater(c) => format!("Unexpected character {c}."),
+            LexErrorKind::UnterminatedString => "Unterminated string.".to_string(),
         };
 
         write!(f, "[line {}] Error: {}", self.line, message)
     }
 }
 
-/// Iterator capable of peeking 2 items ahead.
-/// Implementation based on the `Peekable` struct from rust's std.
-struct DoublyPeekable<I: Iterator> {
-    iter: I,
-    // remembered values
-    peeked: Option<(PeekedItem<I>, Option<PeekedItem<I>>)>,
-}
-
-/// Result of the `next()` function from the Iterator trait
-type PeekedItem<I> = Option<<I as Iterator>::Item>;
-
-impl<I: Iterator> Iterator for DoublyPeekable<I> {
-    type Item = I::Item;
-
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.peeked.take() {
-            None => self.iter.next(),
-            Some((val, None)) => val,
-            Some((val, Some(next))) => {
-                // move the queue by one
-                self.peeked = Some((next, None));
-                val
-            }
-        }
-    }
-}
-
-impl<I: Iterator> DoublyPeekable<I> {
-    fn from(iter: I) -> Self {
-        DoublyPeekable { iter, peeked: None }
-    }
-
-    fn peek(&mut self) -> Option<&I::Item> {
-        self.peeked
-            .get_or_insert_with(|| (self.iter.next(), None))
-            .0
-            .as_ref()
-    }
-
-    fn peek_second(&mut self) -> Option<&I::Item> {
-        self.peeked
-            .get_or_insert_with(|| (self.iter.next(), None))
-            .1
-            .get_or_insert_with(|| self.iter.next())
-            .as_ref()
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{Lexer, LexError, LexErrorKind};
+    use super::{LexError, LexErrorKind, Lexer};
 
-    use crate::{lexer::DoublyPeekable, token::{Token, TokenKind}};
+    use crate::token::{Token, TokenKind};
     use TokenKind::*;
 
     #[test]
@@ -253,11 +211,11 @@ mod tests {
     #[test]
     fn lexer_peeking() {
         let mut lexer = Lexer::from("+\n");
-        assert_eq!(lexer.peek_char(), Some(&'+'));
-        assert_eq!(lexer.peek_second_char(), Some(&'\n'));
+        assert_eq!(lexer.peek_char(), Some('+'));
+        assert_eq!(lexer.peek_second_char(), Some('\n'));
 
         assert_eq!(lexer.next_char(), Some('+'));
-        assert_eq!(lexer.peek_char(), Some(&'\n'));
+        assert_eq!(lexer.peek_char(), Some('\n'));
         assert_eq!(lexer.peek_second_char(), None);
 
         assert_eq!(lexer.next_char(), Some('\n'));
@@ -287,7 +245,7 @@ mod tests {
             .map(|(kind, line)| Token::new(kind, line))
             .collect();
 
-        assert_eq!(result, exp_tokens)
+        assert_eq!(result, exp_tokens);
     }
 
     #[test]
@@ -307,11 +265,12 @@ mod tests {
 
     #[test]
     fn scan_multiple_comments() {
-        let code = "
-            // this is a comment
+        let code = {
+            "// this is a comment
             + // this is a character that the scanner should be able to see
-            // this is a comment ended by EOF";
-        assert_scanning_matches(code, vec![(Plus, 3), (Eof, 4)]);
+            // this is a comment ended by EOF"
+        };
+        assert_scanning_matches(code, vec![(Plus, 2), (Eof, 3)]);
     }
 
     #[test]
@@ -346,7 +305,7 @@ mod tests {
                 (Greater, 1),
                 (Eof, 1),
             ],
-        )
+        );
     }
 
     #[test]
@@ -360,7 +319,7 @@ mod tests {
                 (GreaterEqual, 1),
                 (Eof, 1),
             ],
-        )
+        );
     }
 
     #[test]
@@ -370,7 +329,91 @@ mod tests {
 
             -
         ";
-        assert_scanning_matches(code, vec![(Star, 1), (Plus, 2), (Minus, 4), (Eof, 5)])
+        assert_scanning_matches(code, vec![(Star, 1), (Plus, 2), (Minus, 4), (Eof, 5)]);
+    }
+
+    #[test]
+    fn scan_string() {
+        let s = "this is a string";
+        let code = format!("\"{s}\"");
+        let expected = vec![(String(s), 1), (Eof, 1)];
+        assert_scanning_matches(&code, expected);
+    }
+
+    #[test]
+    fn scan_number() {
+        assert_scanning_matches(
+            "2137 4.25",
+            vec![
+                (Number(2137.0), 1),
+                // woah, scary floating point number comparison!
+                // don't worry, I picked numbers that are representable by the `f64` type :3
+                (Number(4.25), 1),
+                (Eof, 1),
+            ],
+        );
+    }
+
+    #[test]
+    fn scan_fake_decimal() {
+        let code = {
+            ".2137
+            2137."
+        };
+
+        let expected = vec![(Dot, 1), (Number(2137.0), 1), (Number(2137.0), 2), (Dot, 2)];
+
+        assert_scanning_matches(code, expected);
+    }
+
+    #[test]
+    fn scan_keywords() {
+        assert_scanning_matches(
+            "and class else false for fun if nil or print return super this true var while",
+            vec![
+                (And, 1),
+                (Class, 1),
+                (Else, 1),
+                (False, 1),
+                (For, 1),
+                (Fun, 1),
+                (If, 1),
+                (Nil, 1),
+                (Or, 1),
+                (Print, 1),
+                (Return, 1),
+                (Super, 1),
+                (This, 1),
+                (True, 1),
+                (Var, 1),
+                (While, 1),
+                (Eof, 1),
+            ],
+        );
+    }
+
+    #[test]
+    fn scan_identifiers() {
+        let tested_words = vec!["x", "orchid", "FORTIFIED", "vAr13d__", "_", "_meow"];
+        let code = tested_words.join(" ");
+        let expected = tested_words
+            .iter()
+            .map(|name| (Identifier(name), 1))
+            .chain([(Eof, 1)].into_iter())
+            .collect::<Vec<_>>();
+        assert_scanning_matches(&code, expected);
+    }
+
+    #[test]
+    fn scan_not_identifiers_prefixed_numeric() {
+        assert_scanning_matches(
+            "1ndentifi3r5", 
+            vec![
+                (Number(1.0), 1),
+                (Identifier("ndentifi3r5"), 1),
+                (Eof, 1)
+            ]
+        );
     }
 
     #[test]
@@ -379,10 +422,32 @@ mod tests {
         let expected = vec![
             Ok(Token::new(LeftParen, 1)),
             Ok(Token::new(RightParen, 1)),
-            Err(LexError { line: 1, kind: LexErrorKind::UnexpectedCharater('ą') }),
+            Err(LexError {
+                line: 1,
+                kind: LexErrorKind::UnexpectedCharater('ą'),
+            }),
             Ok(Token::new(Plus, 1)),
-            Err(LexError { line: 2, kind: LexErrorKind::UnexpectedCharater('|') }),
+            Err(LexError {
+                line: 2,
+                kind: LexErrorKind::UnexpectedCharater('|'),
+            }),
             Ok(Token::new(Eof, 2)),
+        ];
+
+        let tokens: Vec<_> = Lexer::from(code).collect();
+        assert_eq!(tokens, expected);
+    }
+
+    #[test]
+    fn scan_fail_unterminated_string() {
+        let code = "> \" this is an unterminated string !";
+        let expected = vec![
+            Ok(Token::new(Greater, 1)),
+            Err(LexError {
+                line: 1,
+                kind: LexErrorKind::UnterminatedString,
+            }),
+            Ok(Token::new(Eof, 1)),
         ];
 
         let tokens: Vec<_> = Lexer::from(code).collect();
@@ -396,51 +461,5 @@ mod tests {
     #[ignore = "will crash all testing if failing"]
     fn whitespace_tail_recursion() {
         assert_scanning_matches(" ".repeat(100_000).as_ref(), vec![(Eof, 1)]);
-    }
-
-    #[test]
-    fn peekable_no_peeking() {
-        let mut iter = DoublyPeekable::from(1..=3);
-        assert_eq!(iter.next(), Some(1));
-        assert_eq!(iter.next(), Some(2));
-        assert_eq!(iter.next(), Some(3));
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
-    fn peekable_peek_first() {
-        let mut iter = DoublyPeekable::from(1..=2);
-        assert_eq!(iter.peek(), Some(&1));
-        assert_eq!(iter.next(), Some(1));
-        assert_eq!(iter.next(), Some(2));
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
-    fn peekable_peek_second() {
-        let mut iter = DoublyPeekable::from(1..=3);
-
-        assert_eq!(iter.peek_second(), Some(&2));
-        assert_eq!(iter.next(), Some(1));
-
-        assert_eq!(iter.peek(), Some(&2));
-        assert_eq!(iter.next(), Some(2));
-        assert_eq!(iter.next(), Some(3));
-        assert_eq!(iter.next(), None);
-    }
-
-    #[test]
-    fn peekable_peek_both() {
-        let mut iter = DoublyPeekable::from(1..=3);
-
-        assert_eq!(iter.peek(), Some(&1));
-        assert_eq!(iter.peek_second(), Some(&2));
-
-        assert_eq!(iter.next(), Some(1));
-        assert_eq!(iter.peek(), Some(&2));
-
-        assert_eq!(iter.next(), Some(2));
-        assert_eq!(iter.next(), Some(3));
-        assert_eq!(iter.next(), None);
     }
 }
