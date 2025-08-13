@@ -51,7 +51,8 @@ fn run_repl() {
     loop {
         print!("> ");
         stdout.flush().expect("failure writing to stdout");
-        if stdin.read_line(&mut input).is_err() {
+        stdin.read_line(&mut input).expect("failure reading stdin");
+        if !input.ends_with('\n') {
             break;
         }
         let _ = run_code(&input);

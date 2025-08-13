@@ -38,8 +38,8 @@ pub enum TokenKind<'a> {
 
     // literals
     Identifier(&'a str),
-    String(&'a str),
-    Number(f64),
+    LoxString(&'a str),
+    Number(&'a str),
 
     Eof
 }

@@ -1,107 +1,204 @@
-use std::{fmt, str::Chars};
+use std::{fmt, str::CharIndices};
 
 use crate::token::{Token, TokenKind};
 
 /// Iterator over tokens in Lox code.
 pub struct Lexer<'a> {
-    stream: Chars<'a>,
+    source: &'a str,
+    stream: CharIndices<'a>,
     line: u64,
     finished: bool,
 }
 
-type TokenMatchingResult<'a> = Result<TokenKind<'a>, LexError>;
-
 impl<'a> Lexer<'a> {
+    #[inline]
     pub fn from(source: &'a str) -> Self {
         Lexer {
-            stream: source.chars(),
+            source,
+            stream: source.char_indices(),
             line: 1,
             finished: false,
         }
     }
 
     /// Selects the current token using the character just extracted from the stream.
-    fn scan_token(&mut self) -> TokenMatchingResult<'a> {
+    fn scan_token(&mut self) -> Result<(u64, TokenKind<'a>), LexError> {
         use TokenKind::*;
 
         // I would rather have a tail recursive implementation than the ugly loop-based one,
         // but rust isn't able to optimize it
         'token_scanning: loop {
+            let start_line = self.line;
+
             // try to get a character
-            let c = match self.next_char() {
-                Some(c) => c,
-                None => return Ok(Eof),
+            let (pos, c) = match self.next_char() {
+                Some(t) => t,
+                None => return Ok((start_line, Eof)),
             };
 
             // scan a token beggining in the current character
-            return Ok(match c {
-                // one character tokens
-                '(' => LeftParen,
-                ')' => RightParen,
-                '{' => LeftBrace,
-                '}' => RightBrace,
-                ',' => Comma,
-                '.' => Dot,
-                '-' => Minus,
-                '+' => Plus,
-                ';' => Semicolon,
-                '*' => Star,
-                // one or two character tokens
-                '!' if self.match_next('=') => BangEqual,
-                '=' if self.match_next('=') => EqualEqual,
-                '<' if self.match_next('=') => LessEqual,
-                '>' if self.match_next('=') => GreaterEqual,
-                '!' => Bang,
-                '=' => Equal,
-                '<' => Less,
-                '>' => Greater,
-                // a slash can be a comment or a division operator
-                '/' if self.match_next('/') => 'comment: loop {
-                    match self.peek_char() {
-                        Some('\n') => continue 'token_scanning,
-                        None => {
-                            self.next_char();
-                            break 'comment Eof;
+            return Ok((
+                start_line,
+                match c {
+                    // one character tokens
+                    '(' => LeftParen,
+                    ')' => RightParen,
+                    '{' => LeftBrace,
+                    '}' => RightBrace,
+                    ',' => Comma,
+                    '.' => Dot,
+                    '-' => Minus,
+                    '+' => Plus,
+                    ';' => Semicolon,
+                    '*' => Star,
+                    // one or two character tokens
+                    '!' if self.match_next('=') => BangEqual,
+                    '=' if self.match_next('=') => EqualEqual,
+                    '<' if self.match_next('=') => LessEqual,
+                    '>' if self.match_next('=') => GreaterEqual,
+                    '!' => Bang,
+                    '=' => Equal,
+                    '<' => Less,
+                    '>' => Greater,
+                    // a slash can be a comment or a division operator
+                    '/' if self.match_next('/') => match self.skip_comment() {
+                        TokenScanOutcome::ScannedWhole(()) => continue 'token_scanning,
+                        TokenScanOutcome::ReachedEof => Eof,
+                    },
+                    '/' => Slash,
+                    // whitespace
+                    ' ' | '\r' | '\t' => continue 'token_scanning,
+                    '\n' => {
+                        self.line += 1;
+                        continue 'token_scanning;
+                    }
+                    // string
+                    '"' => match self.scan_string(pos) {
+                        TokenScanOutcome::ScannedWhole(s) => LoxString(s),
+                        TokenScanOutcome::ReachedEof => {
+                            return Err(LexError {
+                                line: start_line,
+                                kind: LexErrorKind::UnterminatedString,
+                            });
                         }
-                        Some(_) => {
-                            self.next_char();
-                        }
+                    },
+                    // number
+                    '0'..='9' => self.scan_number(pos),
+                    // identifier or keyword
+                    '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(pos),
+                    // unrecognized characters
+                    c => {
+                        return Err(LexError {
+                            line: start_line,
+                            kind: LexErrorKind::UnexpectedCharater(c),
+                        });
                     }
                 },
-                '/' => Slash,
-                // whitespace
-                ' ' | '\r' | '\t' => continue 'token_scanning,
-                '\n' => {
-                    self.line += 1;
-                    continue 'token_scanning;
-                }
-                // unrecognized characters
-                c => {
-                    return Err(LexError {
-                        line: self.line,
-                        kind: LexErrorKind::UnexpectedCharater(c),
-                    });
-                }
-            });
+            ));
         }
     }
 
-    /// Eats the characters consisting of the next token and returns the token type
     #[inline]
-    fn next_char(&mut self) -> Option<char> {
+    fn skip_comment(&mut self) -> TokenScanOutcome<()> {
+        loop {
+            match self.next_char() {
+                None => return TokenScanOutcome::ReachedEof,
+                Some((_, '\n')) => {
+                    self.line += 1;
+                    return TokenScanOutcome::ScannedWhole(());
+                }
+                Some(_) => (),
+            }
+        }
+    }
+
+    #[inline]
+    fn scan_string(&mut self, start: usize) -> TokenScanOutcome<&'a str> {
+        loop {
+            match self.next_char() {
+                None => return TokenScanOutcome::ReachedEof,
+                Some((pos, '"')) => {
+                    let contents = &self.source[start + 1..pos];
+                    return TokenScanOutcome::ScannedWhole(contents);
+                }
+                Some((_, '\n')) => {
+                    self.line += 1;
+                }
+                Some(_) => continue,
+            }
+        }
+    }
+
+    #[inline]
+    fn scan_number(&mut self, start: usize) -> TokenKind<'a> {
+        let mut scanned_dot = false;
+        loop {
+            let mut peek = self.stream.clone();
+            match peek.next() {
+                Some((_, '0'..='9')) => (),
+                // scan decimal point
+                Some((_, '.'))
+                    if !scanned_dot && peek.next().is_some_and(|(_, c)| c.is_ascii_digit()) =>
+                {
+                    scanned_dot = true;
+                }
+                // reached the end of the number
+                Some((pos, _)) => return TokenKind::Number(&self.source[start..pos]),
+                None => return TokenKind::Number(&self.source[start..]),
+            }
+            self.next_char();
+        }
+    }
+
+    #[inline]
+    fn scan_identifier(&mut self, start: usize) -> TokenKind<'a> {
+        let name = loop {
+            match self.peek_char_pos() {
+                Some((_, c)) if c.is_ascii_alphanumeric() || c == '_' => self.next_char(),
+                Some((pos, _)) => break &self.source[start..pos],
+                None => break &self.source[start..],
+            };
+        };
+
+        use TokenKind::{
+            And, Class, Else, False, For, Fun, Identifier, If, Nil, Or, Print, Return, Super, This,
+            True, Var, While,
+        };
+
+        match name {
+            "and" => And,
+            "class" => Class,
+            "else" => Else,
+            "false" => False,
+            "for" => For,
+            "fun" => Fun,
+            "if" => If,
+            "nil" => Nil,
+            "or" => Or,
+            "print" => Print,
+            "return" => Return,
+            "super" => Super,
+            "this" => This,
+            "true" => True,
+            "var" => Var,
+            "while" => While,
+            s => Identifier(s),
+        }
+    }
+
+    #[inline]
+    fn next_char(&mut self) -> Option<(usize, char)> {
         self.stream.next()
     }
 
     #[inline]
     fn peek_char(&mut self) -> Option<char> {
-        self.stream.clone().next()
+        self.peek_char_pos().map(|(_, c)| c)
     }
 
     #[inline]
-    fn peek_second_char(&mut self) -> Option<char> {
-        let mut iter = self.stream.clone();
-        iter.next();
-        iter.next()
+    fn peek_char_pos(&mut self) -> Option<(usize, char)> {
+        self.stream.clone().next()
     }
 
     #[inline]
@@ -124,15 +221,21 @@ impl<'a> Iterator for Lexer<'a> {
         }
 
         let token = self.scan_token();
-        if token == Ok(TokenKind::Eof) {
+        if token.is_ok_and(|(_, kind)| kind == TokenKind::Eof) {
             self.finished = true;
         }
 
         Some(match token {
-            Ok(variant) => Ok(Token::new(variant, self.line)),
+            Ok((line, kind)) => Ok(Token::new(kind, line)),
             Err(error) => Err(error),
         })
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TokenScanOutcome<T> {
+    ScannedWhole(T),
+    ReachedEof,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -178,20 +281,15 @@ mod tests {
     #[test]
     fn lexer_token_scan() {
         let mut lexer = Lexer::from("+\n");
-        assert_eq!(lexer.line, 1);
-
-        assert_eq!(lexer.scan_token(), Ok(Plus));
-        assert_eq!(lexer.line, 1);
-
-        assert_eq!(lexer.scan_token(), Ok(Eof));
-        assert_eq!(lexer.line, 2);
+        assert_eq!(lexer.scan_token(), Ok((1, Plus)));
+        assert_eq!(lexer.scan_token(), Ok((2, Eof)));
     }
 
     #[test]
     fn lexer_next_char() {
         let mut lexer = Lexer::from("+\n");
-        assert_eq!(lexer.next_char(), Some('+'));
-        assert_eq!(lexer.next_char(), Some('\n'));
+        assert_eq!(lexer.next_char(), Some((0, '+')));
+        assert_eq!(lexer.next_char(), Some((1, '\n')));
         assert_eq!(lexer.next_char(), None);
     }
 
@@ -200,27 +298,25 @@ mod tests {
         // succesful matching should eat the token
         let mut lexer = Lexer::from("+\n");
         assert!(lexer.match_next('+'));
-        assert_eq!(lexer.scan_token(), Ok(Eof));
+        assert_eq!(lexer.scan_token(), Ok((2, Eof)));
 
         // unsuccesful matching should not eat the token
         let mut lexer = Lexer::from("+\n");
         assert!(!lexer.match_next('-'));
-        assert_eq!(lexer.scan_token(), Ok(Plus));
+        assert_eq!(lexer.scan_token(), Ok((1, Plus)));
     }
 
     #[test]
     fn lexer_peeking() {
         let mut lexer = Lexer::from("+\n");
+
         assert_eq!(lexer.peek_char(), Some('+'));
-        assert_eq!(lexer.peek_second_char(), Some('\n'));
+        assert_eq!(lexer.next_char(), Some((0, '+')));
 
-        assert_eq!(lexer.next_char(), Some('+'));
         assert_eq!(lexer.peek_char(), Some('\n'));
-        assert_eq!(lexer.peek_second_char(), None);
+        assert_eq!(lexer.next_char(), Some((1, '\n')));
 
-        assert_eq!(lexer.next_char(), Some('\n'));
         assert_eq!(lexer.peek_char(), None);
-
         assert_eq!(lexer.next_char(), None);
     }
 
@@ -266,11 +362,12 @@ mod tests {
     #[test]
     fn scan_multiple_comments() {
         let code = {
-            "// this is a comment
+            "
+            // this is a comment
             + // this is a character that the scanner should be able to see
             // this is a comment ended by EOF"
         };
-        assert_scanning_matches(code, vec![(Plus, 2), (Eof, 3)]);
+        assert_scanning_matches(code, vec![(Plus, 3), (Eof, 4)]);
     }
 
     #[test]
@@ -336,32 +433,47 @@ mod tests {
     fn scan_string() {
         let s = "this is a string";
         let code = format!("\"{s}\"");
-        let expected = vec![(String(s), 1), (Eof, 1)];
+        let expected = vec![(LoxString(s), 1), (Eof, 1)];
         assert_scanning_matches(&code, expected);
+    }
+
+    #[test]
+    fn scan_string_empty() {
+        assert_scanning_matches(r#" "" "#, vec![(LoxString(""), 1), (Eof, 1)]);
+    }
+
+    #[test]
+    fn scan_string_multiline() {
+        let s = "first line \n second line \n third line";
+        assert_scanning_matches(&format!("\"{s}\""), vec![(LoxString(s), 1), (Eof, 3)]);
     }
 
     #[test]
     fn scan_number() {
         assert_scanning_matches(
             "2137 4.25",
-            vec![
-                (Number(2137.0), 1),
-                // woah, scary floating point number comparison!
-                // don't worry, I picked numbers that are representable by the `f64` type :3
-                (Number(4.25), 1),
-                (Eof, 1),
-            ],
+            vec![(Number("2137"), 1), (Number("4.25"), 1), (Eof, 1)],
         );
     }
 
     #[test]
-    fn scan_fake_decimal() {
+    fn scan_number_fake_decimal() {
         let code = {
             ".2137
+            123.456.789
             2137."
         };
 
-        let expected = vec![(Dot, 1), (Number(2137.0), 1), (Number(2137.0), 2), (Dot, 2)];
+        let expected = vec![
+            (Dot, 1),
+            (Number("2137"), 1),
+            (Number("123.456"), 2),
+            (Dot, 2),
+            (Number("789"), 2),
+            (Number("2137"), 3),
+            (Dot, 3),
+            (Eof, 3),
+        ];
 
         assert_scanning_matches(code, expected);
     }
@@ -407,12 +519,8 @@ mod tests {
     #[test]
     fn scan_not_identifiers_prefixed_numeric() {
         assert_scanning_matches(
-            "1ndentifi3r5", 
-            vec![
-                (Number(1.0), 1),
-                (Identifier("ndentifi3r5"), 1),
-                (Eof, 1)
-            ]
+            "1ndentifi3r5",
+            vec![(Number("1"), 1), (Identifier("ndentifi3r5"), 1), (Eof, 1)],
         );
     }
 
@@ -440,14 +548,14 @@ mod tests {
 
     #[test]
     fn scan_fail_unterminated_string() {
-        let code = "> \" this is an unterminated string !";
+        let code = "> \" this is \n an unterminated \n string !";
         let expected = vec![
             Ok(Token::new(Greater, 1)),
             Err(LexError {
                 line: 1,
                 kind: LexErrorKind::UnterminatedString,
             }),
-            Ok(Token::new(Eof, 1)),
+            Ok(Token::new(Eof, 3)),
         ];
 
         let tokens: Vec<_> = Lexer::from(code).collect();
