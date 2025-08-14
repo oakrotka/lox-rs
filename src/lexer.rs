@@ -1,6 +1,6 @@
 use std::{fmt, str::CharIndices};
 
-use crate::token::{self, Token, TokenKind};
+use crate::token::{Token, TokenKind};
 
 /// Iterator over tokens in Lox code.
 pub struct Lexer<'a> {
@@ -160,25 +160,30 @@ impl<'a> Lexer<'a> {
             };
         };
 
+        use TokenKind::{
+            And, Class, Else, False, For, Fun, Identifier, If, Nil, Or, Print, Return, Super, This,
+            True, Var, While,
+        };
+
         // match clause is faster than phf apparently
         match name {
-            "and" => TokenKind::And,
-            "class" => TokenKind::Class,
-            "else" => TokenKind::Else,
-            "false" => TokenKind::False,
-            "for" => TokenKind::For,
-            "fun" => TokenKind::Fun,
-            "if" => TokenKind::If,
-            "nil" => TokenKind::Nil,
-            "or" => TokenKind::Or,
-            "print" => TokenKind::Print,
-            "return" => TokenKind::Return,
-            "super" => TokenKind::Super,
-            "this" => TokenKind::This,
-            "true" => TokenKind::True,
-            "var" => TokenKind::Var,
-            "while" => TokenKind::While,
-            _ => TokenKind::Identifier(name),
+            "and" => And,
+            "class" => Class,
+            "else" => Else,
+            "false" => False,
+            "for" => For,
+            "fun" => Fun,
+            "if" => If,
+            "nil" => Nil,
+            "or" => Or,
+            "print" => Print,
+            "return" => Return,
+            "super" => Super,
+            "this" => This,
+            "true" => True,
+            "var" => Var,
+            "while" => While,
+            _ => Identifier(name),
         }
     }
 
