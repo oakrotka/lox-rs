@@ -50,7 +50,7 @@ tokens = [
     'w', # whitespace
 ]
 
-ident_alphabet = '_' + string.ascii_letters
+ident_alphabet = '_' + string.ascii_letters + string.digits
 ident_alphabet_set = set(ident_alphabet)
 
 str_alphabet = str(c for c in string.printable if c != '"')

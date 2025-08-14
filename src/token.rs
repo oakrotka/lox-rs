@@ -1,5 +1,3 @@
-use phf::phf_map;
-
 #[derive(Clone, Copy, PartialEq)]
 pub struct Token<'a> {
     pub kind: TokenKind<'a>,
@@ -45,22 +43,3 @@ pub enum TokenKind<'a> {
 
     Eof
 }
-
-pub(crate) const KEYWORDS: phf::Map<&'static str, TokenKind> = phf_map! {
-    "and" => TokenKind::And,
-    "class" => TokenKind::Class,
-    "else" => TokenKind::Else,
-    "false" => TokenKind::False,
-    "for" => TokenKind::For,
-    "fun" => TokenKind::Fun,
-    "if" => TokenKind::If,
-    "nil" => TokenKind::Nil,
-    "or" => TokenKind::Or,
-    "print" => TokenKind::Print,
-    "return" => TokenKind::Return,
-    "super" => TokenKind::Super,
-    "this" => TokenKind::This,
-    "true" => TokenKind::True,
-    "var" => TokenKind::Var,
-    "while" => TokenKind::While,
-};
