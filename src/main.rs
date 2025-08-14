@@ -2,7 +2,7 @@ use std::{fmt, fs, io::Write, path::Path, process::ExitCode};
 
 use lox_rs::run_code;
 
-// the return value of the program
+/// The return value of the program
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LoxExitStatus {
     Success = 0,
@@ -17,7 +17,7 @@ impl std::process::Termination for LoxExitStatus {
     }
 }
 
-// an enum for `run_file` errors, to be mapped to `LoxExitStatus` values
+/// An enum for `run_file` errors, to be mapped to `LoxExitStatus` values
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum FileRunningError {
     ParseError,

@@ -8,7 +8,10 @@ pub struct LoxEvaluationError;
 
 /// Run the code provided as the argument.
 pub fn run_code(code: &str) -> Result<(), LoxEvaluationError> {
-    let tokens = lexer::Lexer::from(code).collect::<Vec<_>>();
-    println!("{tokens:?}"); // just print tokens for now
+    let mut tokens = lexer::Lexer::from(code);
+    // just print tokens for now
+    while let Some(token) = tokens.next() {
+        print!("{:?} ", token);
+    }
     Ok(())
 }
