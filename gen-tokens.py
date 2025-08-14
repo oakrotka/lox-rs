@@ -46,44 +46,55 @@ tokens = [
     "i", # identifier
     "s", # string
     "n", # number
+    "c", # comment
+    'w', # whitespace
 ]
 
 ident_alphabet = '_' + string.ascii_letters
+ident_alphabet_set = set(ident_alphabet)
+
 str_alphabet = str(c for c in string.printable if c != '"')
+
 keywords = set(t for t in tokens if len(t) > 1 and set(t) < set(string.ascii_letters))
 
-last_was_ident = False
-def choose_token():
-    global last_was_ident
+def is_ident(token):
+    return token and token[-1] in ident_alphabet_set
+
+def handle_ident(cur, prev):
+    return f" {cur}" if is_ident(prev) else cur
+
+def choose_token(prev):
+    global last_token
     token = random.choice(tokens)
     match token:
         case 'i':
             ident_len = random.binomialvariate(n=20) + 1
             name = ''.join(random.choices(ident_alphabet, k=ident_len))
-            if last_was_ident:
-                return f" {name}"
-            else:
-                last_was_ident = True
-                return name
+            return handle_ident(token, prev)
         case 's':
-            last_was_ident = False
             str_len = random.binomialvariate(n=20)
-            return f"\"{''.join(random.choices(str_alphabet, k=str_len))}\""
+            contents = ''.join(random.choices(str_alphabet, k=str_len))
+            return f"\"{contents}\""
         case 'n':
-            last_was_ident = False
-            if random.randrange(2):
-                return str(random.randint(-2**32, 2**32))
-            else:
-                return str(random.uniform(-2**32, 2**32))
+            num_gen_fn = random.randint if random.randrange(2) else random.uniform
+            return str(num_gen_fn(-2**32, 2**32))
+        case 'c':
+            str_len = random.binomialvariate(n=20)
+            contents = ''.join(random.choices(str_alphabet, k=str_len))
+            return '//' + contents + '\n'
+        case 'w':
+            return random.choice('\r\t\n ')
+        case '/':
+            return '/' if prev != '/' else ' /'
         case _:
-            if token in keywords:
-                if last_was_ident:
-                    last_was_ident = True
-                    return f" {token}"
-                last_was_ident = True
-            else:
-                last_was_ident = False
-            return token
+            return handle_ident(token, prev)
+
+last_token = None
+def gen_token():
+    global last_token
+    new_token = choose_token(last_token)
+    last_token = new_token
+    return new_token
 
 for _ in range(int(sys.argv[1])):
-    print(choose_token(), end='')
+    print(gen_token(), end='')
