@@ -40,64 +40,63 @@ impl<'a> Lexer<'a> {
             };
 
             // scan a token beggining in the current character
-            return Ok((
-                start_line,
-                match c {
-                    // one character tokens
-                    '(' => LeftParen,
-                    ')' => RightParen,
-                    '{' => LeftBrace,
-                    '}' => RightBrace,
-                    ',' => Comma,
-                    '.' => Dot,
-                    '-' => Minus,
-                    '+' => Plus,
-                    ';' => Semicolon,
-                    '*' => Star,
-                    // one or two character tokens
-                    '!' if self.match_next('=') => BangEqual,
-                    '=' if self.match_next('=') => EqualEqual,
-                    '<' if self.match_next('=') => LessEqual,
-                    '>' if self.match_next('=') => GreaterEqual,
-                    '!' => Bang,
-                    '=' => Equal,
-                    '<' => Less,
-                    '>' => Greater,
-                    // a slash can be a comment or a division operator
-                    '/' if self.match_next('/') => match self.skip_comment() {
-                        TokenScanOutcome::ScannedWhole(()) => continue 'token_scanning,
-                        TokenScanOutcome::ReachedEof => Eof,
-                    },
-                    '/' => Slash,
-                    // whitespace
-                    ' ' | '\r' | '\t' => continue 'token_scanning,
-                    '\n' => {
-                        self.line += 1;
-                        continue 'token_scanning;
-                    }
-                    // string
-                    '"' => match self.scan_string(pos) {
-                        TokenScanOutcome::ScannedWhole(s) => LoxString(s),
-                        TokenScanOutcome::ReachedEof => {
-                            return Err(LexError {
-                                line: start_line,
-                                kind: LexErrorKind::UnterminatedString,
-                            });
-                        }
-                    },
-                    // number
-                    '0'..='9' => self.scan_number(pos),
-                    // identifier or keyword
-                    '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(pos),
-                    // unrecognized characters
-                    c => {
+            let token = match c {
+                // one character tokens
+                '(' => LeftParen,
+                ')' => RightParen,
+                '{' => LeftBrace,
+                '}' => RightBrace,
+                ',' => Comma,
+                '.' => Dot,
+                '-' => Minus,
+                '+' => Plus,
+                ';' => Semicolon,
+                '*' => Star,
+                // one or two character tokens
+                '!' if self.match_next('=') => BangEqual,
+                '=' if self.match_next('=') => EqualEqual,
+                '<' if self.match_next('=') => LessEqual,
+                '>' if self.match_next('=') => GreaterEqual,
+                '!' => Bang,
+                '=' => Equal,
+                '<' => Less,
+                '>' => Greater,
+                // a slash can be a comment or a division operator
+                '/' if self.match_next('/') => match self.skip_comment() {
+                    TokenScanOutcome::ScannedWhole(()) => continue 'token_scanning,
+                    TokenScanOutcome::ReachedEof => Eof,
+                },
+                '/' => Slash,
+                // whitespace
+                ' ' | '\r' | '\t' => continue 'token_scanning,
+                '\n' => {
+                    self.line += 1;
+                    continue 'token_scanning;
+                }
+                // string
+                '"' => match self.scan_string(pos) {
+                    TokenScanOutcome::ScannedWhole(s) => LoxString(s),
+                    TokenScanOutcome::ReachedEof => {
                         return Err(LexError {
                             line: start_line,
-                            kind: LexErrorKind::UnexpectedCharater(c),
+                            kind: LexErrorKind::UnterminatedString,
                         });
                     }
                 },
-            ));
+                // number
+                '0'..='9' => self.scan_number(pos),
+                // identifier or keyword
+                '_' | 'a'..='z' | 'A'..='Z' => self.scan_identifier(pos),
+                // unrecognized characters
+                c => {
+                    return Err(LexError {
+                        line: start_line,
+                        kind: LexErrorKind::UnexpectedCharater(c),
+                    });
+                }
+            };
+
+            return Ok((start_line, token));
         }
     }
 
