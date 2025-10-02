@@ -1,4 +1,5 @@
 // TODO reconsider module visibility
+mod expr;
 mod lexer;
 mod token;
 
